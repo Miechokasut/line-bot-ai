@@ -96,10 +96,13 @@ async function handleTextEvent(
   let thoughtsTokenCount: number | undefined;
   let candidatesTokenCount: number | undefined;
   let errorMessage: string | undefined;
+  let faqLength = 0;
+  let usedDefault = true;
 
   try {
     // 4. ดึง FAQ (ถ้าไม่ได้และไม่มี cache จะ throw → ตอบ default message)
     const faq = await getFaqText();
+    faqLength = faq.length;
 
     // 5. เรียก Gemini
     const result = await askGemini(faq, userMessage);
@@ -112,6 +115,7 @@ async function handleTextEvent(
       reply = DEFAULT_MESSAGE;
     } else {
       reply = result.text.trim();
+      usedDefault = false;
     }
   } catch (err) {
     errorMessage = err instanceof Error ? err.message : String(err);
@@ -136,10 +140,12 @@ async function handleTextEvent(
     JSON.stringify({
       tag: "line-webhook",
       userMessage,
-      finishReason,
-      thoughtsTokenCount,
-      candidatesTokenCount,
-      error: errorMessage,
+      faqLength, // 0 = ดึง Sheet ไม่ได้/ว่าง | >0 = โหลด FAQ สำเร็จ
+      usedDefault, // true = ตอบ default message | false = ตอบจากโมเดล
+      finishReason, // STOP = ปกติ | MAX_TOKENS = token หมด (thinking กิน?)
+      thoughtsTokenCount, // สูง = โมเดลคิดเยอะ (อาจเป็นสาเหตุ MAX_TOKENS)
+      candidatesTokenCount, // 0 = ไม่ได้ตอบอะไรจริง
+      error: errorMessage, // ไม่ว่าง = มี exception เช่น model ไม่มีจริง / key ผิด
     })
   );
 }

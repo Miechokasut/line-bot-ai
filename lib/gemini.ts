@@ -72,6 +72,9 @@ export async function askGemini(faq: string, question: string): Promise<GeminiRe
       systemInstruction: SYSTEM_INSTRUCTION,
       temperature: 1.0,
       maxOutputTokens: 1024,
+      // ปิด "thinking" ของ flash รุ่นใหม่ ไม่งั้นโมเดลจะใช้ token 1024 ไปกับการคิดจนหมด
+      // แล้วได้ finishReason=MAX_TOKENS โดย text ว่าง → บอทตอบ default message ทุกครั้ง
+      thinkingConfig: { thinkingBudget: 0 },
     },
   });
 
