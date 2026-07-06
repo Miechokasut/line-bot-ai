@@ -75,21 +75,29 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<string>
 }
 
 /**
- * แปลง CSV (schema: category, question, answer, keywords, active)
- * เป็นข้อความ FAQ ที่อ่านง่ายสำหรับโมเดล
- * นับเฉพาะแถวที่ active = TRUE
+ * แปลง CSV เป็นข้อความความรู้สำหรับโมเดล รองรับ 2 โหมด:
+ *  1) FAQ mode — ถ้ามีคอลัมน์ question + answer (schema: category, question, answer, keywords, active)
+ *  2) Generic mode — ถ้าไม่มี ให้แปลงทุกแถวเป็น "ชื่อคอลัมน์: ค่า" (เช่น ตารางติดตามกิจกรรมชุมชน)
  */
 export function csvToFaqText(csv: string): string {
   const rows = parseCsv(csv);
-  if (rows.length === 0) return "";
+  if (rows.length < 2) return "";
 
-  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const header = rows[0].map((h) => h.trim());
+  const lower = header.map((h) => h.toLowerCase());
+
+  const hasFaqSchema = lower.includes("question") && lower.includes("answer");
+  return hasFaqSchema ? faqSchemaToText(rows, lower) : genericRowsToText(rows, header);
+}
+
+/** โหมด FAQ: อ่านคอลัมน์ category/question/answer/keywords/active (นับเฉพาะ active = TRUE) */
+function faqSchemaToText(rows: string[][], lowerHeader: string[]): string {
   const idx = {
-    category: header.indexOf("category"),
-    question: header.indexOf("question"),
-    answer: header.indexOf("answer"),
-    keywords: header.indexOf("keywords"),
-    active: header.indexOf("active"),
+    category: lowerHeader.indexOf("category"),
+    question: lowerHeader.indexOf("question"),
+    answer: lowerHeader.indexOf("answer"),
+    keywords: lowerHeader.indexOf("keywords"),
+    active: lowerHeader.indexOf("active"),
   };
 
   const entries: string[] = [];
@@ -119,6 +127,37 @@ export function csvToFaqText(csv: string): string {
     if (answer) parts.push(`[คำตอบ] ${answer}`);
     if (keywords) parts.push(`[คำสำคัญ] ${keywords}`);
     entries.push(parts.join("\n"));
+  }
+
+  return entries.join("\n\n");
+}
+
+// จำกัดจำนวนแถวสูงสุดที่ป้อนให้โมเดล กัน prompt ใหญ่เกินจน token บาน
+const MAX_GENERIC_RECORDS = 300;
+
+/** โหมด Generic: แปลงทุกแถวเป็นบล็อก "ชื่อคอลัมน์: ค่า" (เว้นเซลล์ว่าง) */
+function genericRowsToText(rows: string[][], header: string[]): string {
+  const entries: string[] = [];
+
+  for (let i = 1; i < rows.length && entries.length < MAX_GENERIC_RECORDS; i++) {
+    const row = rows[i];
+    if (row.length === 0 || row.every((c) => c.trim() === "")) continue;
+
+    const lines: string[] = [];
+    for (let c = 0; c < header.length; c++) {
+      const key = header[c];
+      const value = (c < row.length ? row[c] : "").trim();
+      if (!key || !value) continue;
+      lines.push(`${key}: ${value}`);
+    }
+    if (lines.length > 0) entries.push(lines.join("\n"));
+  }
+
+  const dataRowCount = rows.length - 1;
+  if (dataRowCount > MAX_GENERIC_RECORDS) {
+    console.warn(
+      `[sheet] generic mode truncated: showing ${MAX_GENERIC_RECORDS}/${dataRowCount} rows`
+    );
   }
 
   return entries.join("\n\n");
