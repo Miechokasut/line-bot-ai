@@ -17,6 +17,7 @@ import { NextRequest } from "next/server";
 import { validateSignature, messagingApi } from "@line/bot-sdk";
 import { getFaqText } from "@/lib/sheet";
 import { askGemini } from "@/lib/gemini";
+import { getHistory, appendTurns } from "@/lib/history";
 
 // รันบน Node.js runtime และตั้งเพดานเวลาไว้ 10 วินาที
 export const runtime = "nodejs";
@@ -31,12 +32,14 @@ type LineTextMessageEvent = {
   type: "message";
   replyToken: string;
   message: { type: "text"; text: string };
+  source?: { userId?: string };
 };
 
 type LineEvent = {
   type: string;
   replyToken?: string;
   message?: { type?: string; text?: string };
+  source?: { userId?: string };
 };
 
 function isTextMessageEvent(event: LineEvent): event is LineTextMessageEvent {
@@ -90,6 +93,7 @@ async function handleTextEvent(
   client: messagingApi.MessagingApiClient
 ) {
   const userMessage = event.message.text;
+  const userId = event.source?.userId ?? "";
 
   let reply = DEFAULT_MESSAGE;
   let finishReason: string | undefined;
@@ -100,12 +104,12 @@ async function handleTextEvent(
   let usedDefault = true;
 
   try {
-    // 4. ดึง FAQ (ถ้าไม่ได้และไม่มี cache จะ throw → ตอบ default message)
-    const faq = await getFaqText();
+    // 4. ดึง FAQ + ประวัติบทสนทนาของ user (ขนานกัน)
+    const [faq, history] = await Promise.all([getFaqText(), getHistory(userId)]);
     faqLength = faq.length;
 
-    // 5. เรียก Gemini
-    const result = await askGemini(faq, userMessage);
+    // 5. เรียก Gemini พร้อมประวัติ เพื่อให้คุยต่อเนื่องได้
+    const result = await askGemini(faq, userMessage, history);
     finishReason = result.finishReason;
     thoughtsTokenCount = result.thoughtsTokenCount;
     candidatesTokenCount = result.candidatesTokenCount;
@@ -131,6 +135,16 @@ async function handleTextEvent(
   } catch (err) {
     console.error(
       "[line-webhook] reply failed:",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+
+  // 8. บันทึกบทสนทนารอบนี้ เพื่อให้ข้อความถัดไปคุยต่อเนื่องได้
+  try {
+    await appendTurns(userId, userMessage, reply);
+  } catch (err) {
+    console.error(
+      "[line-webhook] save history failed:",
       err instanceof Error ? err.message : String(err)
     );
   }

@@ -9,6 +9,7 @@
  */
 
 import { GoogleGenAI } from "@google/genai";
+import type { Turn } from "@/lib/history";
 
 // ตั้งชื่อโมเดลผ่าน env ได้ (เผื่อเปลี่ยนโดยไม่ต้องแก้โค้ด) — default เป็นรุ่นที่มีจริงแน่นอน
 // หมายเหตุ: Gemini ไม่มีรุ่น "3.5" (ไล่ 2.0 -> 2.5 -> 3) เรียกชื่อผิดจะ throw แล้วตอบ default ทุกครั้ง
@@ -53,25 +54,33 @@ function getClient(): GoogleGenAI {
   return clientSingleton;
 }
 
-/** ประกอบ content: FAQ มาก่อน, question มาท้ายสุด */
-function buildContents(faq: string, question: string): string {
-  return `<faq>
-${faq || "(ยังไม่มีข้อมูล FAQ)"}
-</faq>
+/** เอา FAQ ไปไว้ใน system instruction (คงที่ต่อ 1 คำขอ) เพื่อให้ contents เก็บแค่บทสนทนา */
+function buildSystemInstruction(faq: string): string {
+  return `${SYSTEM_INSTRUCTION}
 
-<question>
-${question}
-</question>`;
+<faq>
+${faq || "(ยังไม่มีข้อมูล FAQ)"}
+</faq>`;
 }
 
-export async function askGemini(faq: string, question: string): Promise<GeminiResult> {
+export async function askGemini(
+  faq: string,
+  question: string,
+  history: Turn[] = []
+): Promise<GeminiResult> {
   const ai = getClient();
+
+  // ประกอบบทสนทนา: ประวัติเก่ามาก่อน แล้วต่อด้วยคำถามล่าสุด
+  const contents = [
+    ...history.map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] })),
+    { role: "user", parts: [{ text: question }] },
+  ];
 
   const generation = ai.models.generateContent({
     model: GEMINI_MODEL,
-    contents: buildContents(faq, question),
+    contents,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
+      systemInstruction: buildSystemInstruction(faq),
       temperature: 1.0,
       maxOutputTokens: 1024,
       // ปิด "thinking" ของ flash รุ่นใหม่ ไม่งั้นโมเดลจะใช้ token 1024 ไปกับการคิดจนหมด
