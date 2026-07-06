@@ -10,7 +10,9 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-export const GEMINI_MODEL = "gemini-3.5-flash";
+// ตั้งชื่อโมเดลผ่าน env ได้ (เผื่อเปลี่ยนโดยไม่ต้องแก้โค้ด) — default เป็นรุ่นที่มีจริงแน่นอน
+// หมายเหตุ: Gemini ไม่มีรุ่น "3.5" (ไล่ 2.0 -> 2.5 -> 3) เรียกชื่อผิดจะ throw แล้วตอบ default ทุกครั้ง
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const GENERATION_TIMEOUT_MS = 8_000;
 
 export type GeminiResult = {
