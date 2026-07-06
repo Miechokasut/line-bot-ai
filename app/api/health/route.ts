@@ -24,7 +24,27 @@ export async function GET() {
     },
   };
 
-  // 1) ทดสอบดึง FAQ จาก Google Sheet
+  // 0) ดึง CSV ดิบตรง ๆ เพื่อดูว่า Sheet ส่งอะไรมาจริง (HTML? headers ตรงไหม?)
+  const sheetUrl = process.env.SHEET_CSV_URL;
+  if (sheetUrl) {
+    try {
+      const res = await fetch(sheetUrl, { cache: "no-store", redirect: "follow" });
+      const body = await res.text();
+      const firstLine = body.split("\n")[0] ?? "";
+      report.sheetRaw = {
+        httpStatus: res.status,
+        contentType: res.headers.get("content-type"),
+        looksLikeHtml: /<!doctype html|<html/i.test(body.slice(0, 300)),
+        rawLength: body.length,
+        headerLine: firstLine.slice(0, 300),
+        rawPreview: body.slice(0, 400),
+      };
+    } catch (err) {
+      report.sheetRaw = { error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // 1) ทดสอบดึง FAQ จาก Google Sheet (ผ่านตัวแปลง csvToFaqText)
   let faq = "";
   try {
     faq = await getFaqText();
